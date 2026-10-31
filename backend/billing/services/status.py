@@ -1,8 +1,11 @@
 """Validated invoice status transitions."""
 
+import logging
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
@@ -10,6 +13,9 @@ from django.utils import timezone
 from billing.models import Invoice, InvoiceStatus
 from discounts.models import DiscountRule
 from discounts.services import DiscountError, DiscountService, invoice_cycle_quote_id
+from notifications.services import EmailQueueError, queue_email
+
+logger = logging.getLogger(__name__)
 
 
 class InvalidInvoiceTransition(Exception):
@@ -22,6 +28,37 @@ _ALLOWED_TRANSITIONS = {
     InvoiceStatus.PAID: set(),
     InvoiceStatus.CANCELLED: set(),
 }
+
+
+def _queue_status_notice(invoice, new_status):
+    template_by_status = {
+        InvoiceStatus.CONFIRMED: "invoice_confirmed",
+        InvoiceStatus.PAID: "invoice_paid",
+        InvoiceStatus.CANCELLED: "invoice_cancelled",
+    }
+    template = template_by_status.get(new_status)
+    if not template:
+        return
+    customer = invoice.subscription.customer
+    snapshot = invoice.customer_snapshot or {}
+    recipient = snapshot.get("email") or (customer.email if customer else "")
+    if not recipient:
+        return
+    context = {
+        "invoice_id": invoice.invoice_number,
+        "invoice_number": invoice.invoice_number,
+        "customer_name": snapshot.get("name") or (customer.name if customer else "Customer"),
+        "total": str(invoice.total),
+        "currency": invoice.currency,
+        "period_start": invoice.period_start.isoformat(),
+        "period_end": invoice.period_end.isoformat(),
+        "reason": invoice.cancellation_reason,
+        "portal_url": f"{getattr(settings, 'FRONTEND_URL', '').rstrip('/')}/#workspace",
+    }
+    try:
+        queue_email(template, recipient, context, f"invoice:{invoice.pk}:{new_status.lower()}")
+    except (EmailQueueError, DjangoValidationError, ValueError) as exc:
+        logger.warning("Could not queue %s notice for invoice %s: %s", new_status, invoice.pk, exc)
 
 
 @transaction.atomic
@@ -94,4 +131,5 @@ def transition_invoice_status(invoice_id, new_status, *, reason=""):
             except (DiscountError, DiscountRule.DoesNotExist):
                 pass
     invoice.save(update_fields=fields)
+    _queue_status_notice(invoice, new_status)
     return invoice

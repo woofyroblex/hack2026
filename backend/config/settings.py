@@ -168,6 +168,10 @@ REST_FRAMEWORK = {
         'accounts.authentication.AccountJWTAuthentication',
     ],
     'EXCEPTION_HANDLER': 'config.api.stable_exception_handler',
+    'DEFAULT_THROTTLE_RATES': {
+        'auth': '20/hour',
+        'password_recovery': '5/hour',
+    },
 }
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 DEFAULT_FROM_EMAIL = 'no-reply@localhost'

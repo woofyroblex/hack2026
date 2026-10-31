@@ -1,13 +1,14 @@
 import React, { useState } from 'react'
-import { Eye, EyeOff, Lock, Mail, Loader2, AlertCircle, X, CheckCircle2, Info } from 'lucide-react'
+import { Eye, EyeOff, Lock, Mail, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '../context/useAuth.ts'
 import { formatApiError } from '../api/auth.ts'
 
 interface LoginFormProps {
-  onNavigateToSignup?: () => void
+  onNavigateToSignup: () => void
+  onNavigateToRecovery: () => void
 }
 
-export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
+export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup, onNavigateToRecovery }) => {
   const { login } = useAuth()
 
   const [email, setEmail] = useState('')
@@ -21,7 +22,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
 
   // Form states
   const [isLoading, setIsLoading] = useState(false)
-  const [dialogNotice, setDialogNotice] = useState<{ title: string; message: string } | null>(null)
   const [loginSuccess, setLoginSuccess] = useState(false)
 
   // Validate email format
@@ -40,9 +40,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
   const validatePassword = (value: string): string | undefined => {
     if (!value) {
       return 'Password is required.'
-    }
-    if (value.length < 6) {
-      return 'Password must be at least 6 characters.'
     }
     return undefined
   }
@@ -112,40 +109,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
 
   return (
     <div className="w-full max-w-[440px] mx-auto">
-      {/* Informative modal / notice for non-implemented backend flows like Forgot Password / Register */}
-      {dialogNotice && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in"
-        >
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-slate-100 relative">
-            <button
-              type="button"
-              onClick={() => setDialogNotice(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-[#4965F5]"
-              aria-label="Close dialog"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <div className="w-10 h-10 rounded-full bg-blue-50 text-[#4965F5] flex items-center justify-center mb-3">
-              <Info className="w-5 h-5" />
-            </div>
-            <h3 className="text-lg font-bold text-[#172033]">{dialogNotice.title}</h3>
-            <p className="text-sm text-slate-600 mt-2 leading-relaxed">{dialogNotice.message}</p>
-            <div className="mt-5">
-              <button
-                type="button"
-                onClick={() => setDialogNotice(null)}
-                className="w-full py-2.5 px-4 bg-[#4965F5] hover:bg-[#3852de] text-white text-sm font-semibold rounded-xl transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#4965F5]"
-              >
-                Understood
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Main Login Card */}
       <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-xl shadow-slate-200/50 p-6 sm:p-8 transition-all">
         {/* Card Header */}
@@ -252,13 +215,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
               </label>
               <button
                 type="button"
-                onClick={() =>
-                  setDialogNotice({
-                    title: 'Password Reset',
-                    message:
-                      'Password recovery will be enabled once the backend password reset service is activated.',
-                  })
-                }
+                onClick={onNavigateToRecovery}
                 className="text-xs font-semibold text-[#4965F5] hover:text-[#3852de] hover:underline focus:outline-none focus:ring-2 focus:ring-[#4965F5] rounded"
               >
                 Forgot password?
@@ -361,17 +318,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
         <div className="text-center">
           <button
             type="button"
-            onClick={() => {
-              if (onNavigateToSignup) {
-                onNavigateToSignup()
-              } else {
-                setDialogNotice({
-                  title: 'Account Registration',
-                  message:
-                    'Self-serve workspace registration will be activated in the next development phase.',
-                })
-              }
-            }}
+            onClick={onNavigateToSignup}
             className="w-full py-2.5 px-4 rounded-xl border border-[#E5E7EB] bg-slate-50/60 hover:bg-slate-100 text-[#172033] font-semibold text-xs sm:text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-[#4965F5]"
           >
             Create an account
@@ -381,7 +328,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
 
       {/* Trust & Security footer notice */}
       <p className="text-center text-[11px] text-slate-400 mt-5">
-        Protected by enterprise-grade 256-bit encryption. SOC2 Type II Certified.
+        Use the email address you registered with to sign in.
       </p>
     </div>
   )

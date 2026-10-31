@@ -1,4 +1,8 @@
-Your invoice {{ invoice_id }} is confirmed.
+Hello {{ customer_name }},
+
+Your invoice {{ invoice_number }} is confirmed.
 
 Amount due: {{ total }} {{ currency }}
 Billing period: {{ period_start }} to {{ period_end }}
+
+Sign in to view your invoice: {{ portal_url }}

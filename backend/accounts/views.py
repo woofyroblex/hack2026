@@ -19,6 +19,7 @@ from rest_framework.authentication import SessionAuthentication
 from django.middleware.csrf import get_token
 from django.utils.crypto import constant_time_compare
 from accounts.authentication import password_stamp
+from accounts.throttling import AuthenticationThrottle
 
 
 def _user_payload(user):
@@ -78,6 +79,7 @@ def _issue_tokens(user, remember_me=False):
 class LoginView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
+    throttle_classes = [AuthenticationThrottle]
 
     def post(self, request):
         email = str(request.data.get('email', '')).strip().lower()
@@ -93,6 +95,7 @@ class LoginView(APIView):
 class RegisterView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
+    throttle_classes = [AuthenticationThrottle]
 
     @transaction.atomic
     def post(self, request):
