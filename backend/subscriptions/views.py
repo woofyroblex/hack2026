@@ -84,7 +84,13 @@ def _serialize_line(line):
 
 def _serialize(subscription, portal=False):
     events = [
-        {'action': e.action, 'from': e.from_status or None, 'to': e.to_status, 'effective_on': e.effective_on.isoformat(), 'reason': e.reason}
+        {
+            'action': e.action,
+            'from': e.from_status or None,
+            'to': e.to_status,
+            'effective_on': e.effective_on.isoformat(),
+            'reason': '' if portal else e.reason,
+        }
         for e in subscription.events.all()
     ]
     data = {
@@ -144,6 +150,8 @@ def _resolve_ids(customer_id, plan_id, template_id=None):
             template = QuoteTemplate.objects.get(pk=template_id, is_active=True)
         except (QuoteTemplate.DoesNotExist, TypeError, ValueError):
             raise ValidationError({'template_id': 'Select an active quotation template.'})
+        if not template.plan.is_active:
+            raise ValidationError({'template_id': 'The quotation template uses an inactive plan.'})
     if template:
         plan = template.plan
     else:
@@ -191,23 +199,30 @@ def _save_priced_lines(subscription, pricing, submitted_lines):
             raise ValidationError({'lines': 'Line quantities must be positive integers.'})
         try:
             unit_price = _price_decimal(_required_price(priced, 'effective_unit_price', 'unit_price'))
+            unit_sales_price = _price_decimal(priced.get('unit_sales_price', unit_price))
             gross_amount = _price_decimal(_required_price(priced, 'line_subtotal', 'gross_amount', 'subtotal'))
             discount_amount = _price_decimal(priced.get('discount_amount', 0))
             tax_rate = _price_decimal(priced.get('tax_rate', 0))
             tax_amount = _price_decimal(priced.get('tax_amount', 0))
             net_amount = _price_decimal(_required_price(priced, 'line_net_amount', 'net_amount', 'total'))
+            variant_adjustment = Decimal(str(priced.get('variant_adjustment', unit_price - unit_sales_price)))
+            if not variant_adjustment.is_finite() or unit_sales_price + variant_adjustment != unit_price:
+                raise ValueError('Pricing returned inconsistent unit price snapshots.')
         except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
             raise IntegrationUnavailable('Pricing breakdown contains a missing or invalid amount.') from exc
         objects.append(SubscriptionLine(
             subscription=subscription,
             product=product,
             variant=variant,
-            product_name_snapshot=product.name,
+            product_name_snapshot=str(priced.get('product_name') or product.name),
             variant_name_snapshot=str(priced.get('variant_label') or (f'{variant.attribute_label}: {variant.option_value}' if variant else '')),
             quantity=quantity,
             unit_price=unit_price,
+            unit_sales_price=unit_sales_price,
+            variant_adjustment=variant_adjustment,
             gross_amount=gross_amount,
             discount_amount=discount_amount,
+            tax_rate=tax_rate,
             tax_rate_snapshot=tax_rate,
             tax_amount=tax_amount,
             net_amount=net_amount,
@@ -405,6 +420,10 @@ class SubscriptionDetailView(APIView):
     @transaction.atomic
     def patch(self, request, pk):
         _staff_required(request.user)
+        editable_fields = {'start_date', 'expiry_date', 'payment_term_days', 'lines'}
+        unknown_fields = set(request.data) - editable_fields
+        if unknown_fields:
+            raise ValidationError({field: 'This field cannot be edited on a draft subscription.' for field in unknown_fields})
         try:
             subscription = Subscription.objects.select_for_update().select_related('plan', 'customer', 'template').get(pk=pk)
         except Subscription.DoesNotExist:
@@ -426,15 +445,26 @@ class SubscriptionDetailView(APIView):
             raise ValidationError({'expiry_date': 'Expiry cannot be before the start date.'})
         if expiry_date and not _is_complete_cycle_end(start_date, expiry_date, subscription.cadence):
             raise ValidationError({'expiry_date': 'Expiry must align with the end of a complete billing cycle; proration is not supported.'})
-        lines = _price_input(request.data, subscription.template)
         if 'lines' in request.data:
+            lines = _price_input(request.data, None)
+        elif 'start_date' in request.data:
+            lines = [
+                {'product_id': line.product_id, 'variant_id': line.variant_id, 'quantity': line.quantity}
+                for line in subscription.lines.all()
+            ]
+        else:
+            lines = None
+        if lines is not None:
             _validate_requested_lines(lines, subscription.minimum_quantity_snapshot)
-        if 'lines' in request.data:
+        if lines is not None:
             pricing = _pricing(subscription.plan, subscription.customer, lines, start_date)
         else:
             pricing = None
         subscription.start_date = start_date
         subscription.expiry_date = expiry_date
+        if 'start_date' in request.data:
+            subscription.billing_anchor_day = start_date.day
+            subscription.billing_anchor_month = start_date.month
         if 'payment_term_days' in request.data:
             try:
                 subscription.payment_term_days = _integer_input(request.data['payment_term_days'], minimum=0)

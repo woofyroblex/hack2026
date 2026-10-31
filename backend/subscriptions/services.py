@@ -56,8 +56,10 @@ def allowed_actions(subscription: Subscription, actor=None) -> list[str]:
     if subscription.status == Subscription.Status.DRAFT:
         actions.append('quote')
     elif subscription.status == Subscription.Status.QUOTATION:
-        actions.append('confirm')
-        actions.append('send')
+        if subscription.quote_valid_until and subscription.quote_valid_until < timezone.localdate():
+            actions.append('reopen')
+        else:
+            actions.extend(('confirm', 'send'))
     elif subscription.status == Subscription.Status.CONFIRMED:
         actions.append('activate')
     elif subscription.status == Subscription.Status.ACTIVE:
@@ -93,7 +95,35 @@ def transition(subscription_id, action: str, actor=None, reason: str = '', effec
     elif action == 'confirm':
         if subscription.quote_valid_until and subscription.quote_valid_until < today:
             raise InvalidTransition({'code': 'QUOTE_EXPIRED', 'message': 'This quotation has expired.'})
+        if subscription.renewal_of_id:
+            previous = Subscription.objects.select_for_update().get(pk=subscription.renewal_of_id)
+            expected_start = previous.expiry_date + timedelta(days=1) if previous.expiry_date else previous.next_billing_date
+            if (
+                previous.status != Subscription.Status.ACTIVE
+                or expected_start != subscription.start_date
+                or expected_start is None
+                or expected_start <= today
+            ):
+                raise InvalidTransition({
+                    'code': 'RENEWAL_DATE_CHANGED',
+                    'message': 'The original subscription changed after this renewal draft was created. Create a new renewal draft.',
+                })
+            if previous.expiry_date is None:
+                previous.expiry_date = subscription.start_date - timedelta(days=1)
+                previous.save(update_fields=['expiry_date', 'updated_at'])
+                SubscriptionEvent.objects.create(
+                    subscription=previous,
+                    action='renewal_scheduled',
+                    from_status=previous.status,
+                    to_status=previous.status,
+                    actor=actor,
+                    reason=f'Renewal {subscription.number} starts on {subscription.start_date.isoformat()}.',
+                    effective_on=subscription.start_date,
+                )
         new_status = Subscription.Status.CONFIRMED
+    elif action == 'reopen':
+        subscription.quote_valid_until = None
+        new_status = Subscription.Status.DRAFT
     elif action == 'activate':
         if subscription.start_date > today:
             subscription.next_billing_date = subscription.start_date
@@ -148,7 +178,14 @@ def renew(subscription_id, actor=None) -> Subscription:
     old = Subscription.objects.select_for_update().select_related('plan', 'customer', 'template').prefetch_related('lines').get(pk=subscription_id)
     if 'renew' not in allowed_actions(old, actor):
         raise PermissionDenied('Renewal is not allowed for this subscription.')
-    start = old.expiry_date + timedelta(days=1) if old.expiry_date else (old.next_billing_date or timezone.localdate())
+    existing_renewal = old.renewals.order_by('-created_at', '-id').first()
+    if existing_renewal:
+        if existing_renewal.status in (Subscription.Status.DRAFT, Subscription.Status.QUOTATION):
+            return existing_renewal
+        raise ValidationError({'code': 'RENEWAL_ALREADY_EXISTS', 'message': 'This subscription already has a renewal. Manage that renewal instead of creating another.'})
+    start = old.expiry_date + timedelta(days=1) if old.expiry_date else old.next_billing_date
+    if start is None or start <= timezone.localdate():
+        raise ValidationError({'code': 'NO_FUTURE_RENEWAL_DATE', 'message': 'The subscription must have a future billing date before it can be renewed.'})
     renewed = Subscription.objects.create(
         customer=old.customer,
         plan=old.plan,
@@ -160,6 +197,10 @@ def renew(subscription_id, actor=None) -> Subscription:
         payment_term_days=old.payment_term_days,
         currency=old.currency,
         base_price_snapshot=old.base_price_snapshot,
+        subtotal=old.subtotal,
+        discount_total=old.discount_total,
+        tax_total=old.tax_total,
+        total=old.total,
         plan_base_price_snapshot=old.plan_base_price_snapshot,
         plan_tax_rate_snapshot=old.plan_tax_rate_snapshot,
         minimum_quantity_snapshot=old.minimum_quantity_snapshot,

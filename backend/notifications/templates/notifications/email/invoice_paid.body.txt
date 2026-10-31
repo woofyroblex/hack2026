@@ -1,3 +1,7 @@
-We received payment for invoice {{ invoice_id }}.
+Hello {{ customer_name }},
 
-Paid amount: {{ total }} {{ currency }}
+We received payment for invoice {{ invoice_number }}.
+
+Amount received: {{ total }} {{ currency }}
+
+Sign in to view your billing history: {{ portal_url }}

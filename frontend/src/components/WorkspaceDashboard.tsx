@@ -1,26 +1,22 @@
 import { useState } from 'react'
-import { FileText, Headphones, Layers, LayoutDashboard, LogOut, ShieldCheck, Users, Loader2 } from 'lucide-react'
+import { FileText, Layers, LayoutDashboard, LogOut, Users, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/useAuth.ts'
 import { BrandLogo } from './BrandLogo.tsx'
 import { RoleProtectedRoute } from './ProtectedRoute.tsx'
 import { CustomerDirectory } from './customers/CustomerDirectory.tsx'
-import { StaffOperations } from './customers/StaffOperations.tsx'
-import { AdminGovernance } from './customers/AdminGovernance.tsx'
 import { ReportsView } from './reports/ReportsView.tsx'
 import { SubscriptionWorkspace } from './SubscriptionWorkspace.tsx'
 import { InvoiceWorkspace } from './invoices/InvoiceWorkspace.tsx'
 import { CustomerPortal } from './portal/CustomerPortal.tsx'
 import type { UserRole } from '../types/auth.ts'
 
-type WorkspaceTab = 'overview' | 'customers' | 'subscriptions' | 'invoices' | 'operations' | 'governance'
+type WorkspaceTab = 'overview' | 'customers' | 'subscriptions' | 'invoices'
 
 const navigation: Array<{ id: WorkspaceTab; label: string; icon: typeof LayoutDashboard; roles: UserRole[] }> = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard, roles: ['staff', 'admin'] },
   { id: 'subscriptions', label: 'Subscriptions', icon: Layers, roles: ['staff', 'admin'] },
   { id: 'invoices', label: 'Invoices', icon: FileText, roles: ['staff', 'admin'] },
   { id: 'customers', label: 'Customers', icon: Users, roles: ['staff', 'admin'] },
-  { id: 'operations', label: 'Operations', icon: Headphones, roles: ['staff', 'admin'] },
-  { id: 'governance', label: 'Governance', icon: ShieldCheck, roles: ['admin'] },
 ]
 
 export function WorkspaceDashboard() {
@@ -59,8 +55,6 @@ export function WorkspaceDashboard() {
       {activeTab === 'subscriptions' && <RoleProtectedRoute roles={['staff', 'admin']}><SubscriptionWorkspace/></RoleProtectedRoute>}
       {activeTab === 'invoices' && <RoleProtectedRoute roles={['staff', 'admin']}><InvoiceWorkspace/></RoleProtectedRoute>}
       {activeTab === 'customers' && <RoleProtectedRoute roles={['staff', 'admin']}><CustomerDirectory/></RoleProtectedRoute>}
-      {activeTab === 'operations' && <RoleProtectedRoute roles={['staff', 'admin']}><StaffOperations/></RoleProtectedRoute>}
-      {activeTab === 'governance' && <RoleProtectedRoute roles={['admin']}><AdminGovernance/></RoleProtectedRoute>}
     </main>
   </div>
 }
