@@ -41,6 +41,7 @@ urlpatterns = [
     path('api/v1/taxes/', TaxCatalogView.as_view(), name='tax-catalog'),
     path('api/v1/discounts/', DiscountCatalogView.as_view(), name='discount-catalog'),
     path('api/v1/pricing/preview/', PricingPreviewView.as_view(), name='pricing-preview'),
+    path('api/v1/payments/', include('payments.urls')),
     path('api/v1/', include('subscriptions.urls')),
     path('api/v1/', include('billing.urls')),
     path('api/v1/', include('analytics.urls')),

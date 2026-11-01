@@ -53,7 +53,7 @@ def _subscription_queryset(request, portal=False):
     return qs
 
 
-def _pricing(plan, customer, lines, effective_date):
+def _pricing(plan, lines, effective_date):
     """Use Aby's agreed pricing contract. Never trust client totals."""
     try:
         calculate_price = import_string(getattr(settings, 'SUBSCRIPTION_PRICING_PROVIDER', ''))
@@ -191,26 +191,44 @@ def _save_priced_lines(subscription, pricing, submitted_lines):
             raise ValidationError({'lines': 'Line quantities must be positive integers.'})
         try:
             unit_price = _price_decimal(_required_price(priced, 'effective_unit_price', 'unit_price'))
+            unit_sales_price = _price_decimal(priced.get('unit_sales_price', product.sales_price))
+            variant_adjustment = _signed_price_decimal(
+                priced.get('variant_adjustment', unit_price - unit_sales_price)
+            )
             gross_amount = _price_decimal(_required_price(priced, 'line_subtotal', 'gross_amount', 'subtotal'))
             discount_amount = _price_decimal(priced.get('discount_amount', 0))
             tax_rate = _price_decimal(priced.get('tax_rate', 0))
             tax_amount = _price_decimal(priced.get('tax_amount', 0))
             net_amount = _price_decimal(_required_price(priced, 'line_net_amount', 'net_amount', 'total'))
+            final_line_total = _price_decimal(priced.get('final_line_total', net_amount + tax_amount))
         except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
             raise IntegrationUnavailable('Pricing breakdown contains a missing or invalid amount.') from exc
+        if unit_sales_price + variant_adjustment != unit_price:
+            raise IntegrationUnavailable('Pricing breakdown unit price does not match its saved price components.')
+        if gross_amount - discount_amount != net_amount or net_amount + tax_amount != final_line_total:
+            raise IntegrationUnavailable('Pricing breakdown line amounts do not reconcile.')
+        variant_name = str(priced.get('variant_label') or (f'{variant.attribute_label}: {variant.option_value}' if variant else ''))
         objects.append(SubscriptionLine(
             subscription=subscription,
             product=product,
             variant=variant,
             product_name_snapshot=product.name,
-            variant_name_snapshot=str(priced.get('variant_label') or (f'{variant.attribute_label}: {variant.option_value}' if variant else '')),
+            variant_name_snapshot=variant_name,
             quantity=quantity,
+            unit_sales_price=unit_sales_price,
+            variant_adjustment=variant_adjustment,
+            effective_unit_price=unit_price,
+            line_subtotal=gross_amount,
+            line_net_amount=net_amount,
+            tax_rate=tax_rate,
+            final_line_total=final_line_total,
             unit_price=unit_price,
             gross_amount=gross_amount,
             discount_amount=discount_amount,
             tax_rate_snapshot=tax_rate,
             tax_amount=tax_amount,
             net_amount=net_amount,
+            sort_order=len(objects),
         ))
     SubscriptionLine.objects.bulk_create(objects)
 
@@ -223,6 +241,27 @@ def _save_totals(subscription, pricing):
         subscription.total = _price_decimal(pricing['final_total'])
     except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
         raise IntegrationUnavailable('Pricing breakdown contains invalid totals.') from exc
+    plan_summary = pricing.get('plan_summary') or {}
+    if not isinstance(plan_summary, dict):
+        raise IntegrationUnavailable('Pricing plan summary must be an object.')
+    try:
+        plan_subtotal = _price_decimal(plan_summary.get('base_fee', 0))
+        plan_discount = _price_decimal(plan_summary.get('discount_amount', 0))
+        plan_tax = _price_decimal(plan_summary.get('tax_amount', 0))
+    except (TypeError, ValueError, InvalidOperation) as exc:
+        raise IntegrationUnavailable('Pricing breakdown contains invalid plan totals.') from exc
+    lines = list(subscription.lines.all())
+    line_subtotal = sum((line.gross_amount for line in lines), Decimal('0.00'))
+    line_discount = sum((line.discount_amount for line in lines), Decimal('0.00'))
+    line_tax = sum((line.tax_amount for line in lines), Decimal('0.00'))
+    if subscription.subtotal != plan_subtotal + line_subtotal:
+        raise IntegrationUnavailable('Pricing subtotal does not match its plan and line snapshots.')
+    if subscription.discount_total != plan_discount + line_discount:
+        raise IntegrationUnavailable('Pricing discount total does not match its plan and line snapshots.')
+    if subscription.tax_total != plan_tax + line_tax:
+        raise IntegrationUnavailable('Pricing tax total does not match its plan and line snapshots.')
+    if subscription.total != subscription.subtotal - subscription.discount_total + subscription.tax_total:
+        raise IntegrationUnavailable('Pricing totals do not reconcile.')
     currency = str(pricing.get('currency', subscription.currency)).upper()
     if len(currency) != 3 or not currency.isalpha():
         raise IntegrationUnavailable('Pricing breakdown currency must be a three-letter code.')
@@ -231,9 +270,20 @@ def _save_totals(subscription, pricing):
 
 
 def _price_decimal(value):
+    if isinstance(value, float):
+        raise ValueError('Prices must be supplied as decimal values, not floating point values.')
     amount = Decimal(str(value))
     if not amount.is_finite() or amount < 0:
         raise ValueError('Prices must be finite and non-negative.')
+    return amount
+
+
+def _signed_price_decimal(value):
+    if isinstance(value, float):
+        raise ValueError('Price components must be supplied as decimal values, not floating point values.')
+    amount = Decimal(str(value))
+    if not amount.is_finite():
+        raise ValueError('Price components must be finite.')
     return amount
 
 
@@ -272,10 +322,18 @@ def _validate_requested_lines(lines, minimum_quantity):
         raise ValidationError({'lines': f'This plan requires a total product quantity of at least {minimum_quantity}.'})
 
 
-def _is_complete_cycle_end(start: date, expiry: date, cadence: str) -> bool:
+def _is_complete_cycle_end(
+    start: date,
+    expiry: date,
+    cadence: str,
+    anchor_day: int | None = None,
+    anchor_month: int | None = None,
+) -> bool:
     cursor = start
     for _ in range(100000):
-        next_start = add_billing_period(cursor, cadence, start.day, start.month)
+        next_start = add_billing_period(
+            cursor, cadence, anchor_day or start.day, anchor_month or start.month
+        )
         cycle_end = next_start - timedelta(days=1)
         if cycle_end == expiry:
             return True
@@ -350,7 +408,7 @@ class SubscriptionListCreateView(APIView):
             raise ValidationError({'plan_id': 'Plan is not available on the selected start date.'})
         lines = _price_input(request.data, template)
         _validate_requested_lines(lines, plan.minimum_quantity)
-        pricing = _pricing(plan, customer, lines, start_date)
+        pricing = _pricing(plan, lines, start_date)
         plan_tax_rate = sum(
             (tax.percentage_rate for tax in plan.taxes.filter(is_active=True)),
             Decimal('0.00'),
@@ -424,16 +482,25 @@ class SubscriptionDetailView(APIView):
             raise ValidationError({'dates': 'Use YYYY-MM-DD dates.'})
         if expiry_date and expiry_date < start_date:
             raise ValidationError({'expiry_date': 'Expiry cannot be before the start date.'})
-        if expiry_date and not _is_complete_cycle_end(start_date, expiry_date, subscription.cadence):
+        if expiry_date and not _is_complete_cycle_end(
+            start_date,
+            expiry_date,
+            subscription.cadence,
+            start_date.day if 'start_date' in request.data else subscription.billing_anchor_day,
+            start_date.month if 'start_date' in request.data else subscription.billing_anchor_month,
+        ):
             raise ValidationError({'expiry_date': 'Expiry must align with the end of a complete billing cycle; proration is not supported.'})
         lines = _price_input(request.data, subscription.template)
         if 'lines' in request.data:
             _validate_requested_lines(lines, subscription.minimum_quantity_snapshot)
         if 'lines' in request.data:
-            pricing = _pricing(subscription.plan, subscription.customer, lines, start_date)
+            pricing = _pricing(subscription.plan, lines, start_date)
         else:
             pricing = None
         subscription.start_date = start_date
+        if 'start_date' in request.data:
+            subscription.billing_anchor_day = start_date.day
+            subscription.billing_anchor_month = start_date.month
         subscription.expiry_date = expiry_date
         if 'payment_term_days' in request.data:
             try:

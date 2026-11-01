@@ -3,30 +3,43 @@ import { BrandLogo } from './components/BrandLogo.tsx'
 import { SubscriptionIllustration } from './components/SubscriptionIllustration.tsx'
 import { LoginForm } from './components/LoginForm.tsx'
 import { SignupForm } from './components/SignupForm.tsx'
+import { PasswordResetForm } from './components/PasswordResetForm.tsx'
 import { WorkspaceDashboard } from './components/WorkspaceDashboard.tsx'
 import { ProtectedRoute } from './components/ProtectedRoute.tsx'
 import { AuthProvider } from './context/AuthContext.tsx'
 import { useAuth } from './context/useAuth.ts'
 import { CheckCircle2, ShieldCheck, Zap } from 'lucide-react'
 
+type AuthScreen = 'login' | 'signup' | 'reset-password'
+
+function getInitialAuthScreen(): AuthScreen {
+  if (typeof window === 'undefined') return 'login'
+  const hashRoute = window.location.hash.slice(1).split('?')[0].toLowerCase()
+  const search = window.location.search.toLowerCase()
+  if (hashRoute === 'reset-password') return 'reset-password'
+  if (hashRoute.includes('signup') || search.includes('signup') || search.includes('register')) return 'signup'
+  return 'login'
+}
+
+function getResetLinkParams() {
+  if (typeof window === 'undefined') return { uid: '', token: '' }
+  const query = window.location.hash.split('?').slice(1).join('?')
+  const params = new URLSearchParams(query)
+  return { uid: params.get('uid') || '', token: params.get('token') || '' }
+}
+
 const MainScreen: React.FC = () => {
-  const { isAuthenticated, isLoading } = useAuth()
+  const { isAuthenticated, isLoading, logout } = useAuth()
 
   // Supports state-based switching with hash/path detection fallback
-  const [currentScreen, setCurrentScreen] = useState<'login' | 'signup'>(() => {
-    if (typeof window !== 'undefined') {
-      const hash = window.location.hash.toLowerCase()
-      const search = window.location.search.toLowerCase()
-      if (hash.includes('signup') || search.includes('signup') || search.includes('register')) {
-        return 'signup'
-      }
-    }
-    return 'login'
-  })
+  const [currentScreen, setCurrentScreen] = useState<AuthScreen>(getInitialAuthScreen)
 
   // Sync hash when screen changes so users can bookmark or reload
   useEffect(() => {
-    if (isAuthenticated) {
+    if (currentScreen === 'reset-password') {
+      // Keep the one-time uid and token in the hash while the reset form is open.
+      return
+    } else if (isAuthenticated) {
       window.history.replaceState(null, '', '#workspace')
     } else if (currentScreen === 'signup') {
       window.history.replaceState(null, '', '#signup')
@@ -35,8 +48,13 @@ const MainScreen: React.FC = () => {
     }
   }, [currentScreen, isAuthenticated])
 
+  async function returnToLogin() {
+    if (isAuthenticated) await logout()
+    setCurrentScreen('login')
+  }
+
   // If user is authenticated, render the protected workspace dashboard
-  if (isAuthenticated) {
+  if (isAuthenticated && currentScreen !== 'reset-password') {
     return (
       <ProtectedRoute>
         <WorkspaceDashboard />
@@ -123,7 +141,7 @@ const MainScreen: React.FC = () => {
       {/* RIGHT COLUMN: CLEAN MODERN AUTH CARD (LOGIN / SIGNUP)     */}
       {/* ========================================================= */}
       <main
-        aria-label={currentScreen === 'signup' ? 'BrightLoop Sign Up' : 'BrightLoop Sign In'}
+        aria-label={currentScreen === 'signup' ? 'BrightLoop Sign Up' : currentScreen === 'reset-password' ? 'BrightLoop Password Reset' : 'BrightLoop Sign In'}
         className="lg:w-1/2 xl:w-[48%] flex flex-col justify-center items-center p-6 sm:p-10 lg:p-14"
       >
         {/* Mobile branding header displayed on mobile devices */}
@@ -139,6 +157,8 @@ const MainScreen: React.FC = () => {
           </div>
         ) : currentScreen === 'signup' ? (
           <SignupForm onNavigateToLogin={() => setCurrentScreen('login')} />
+        ) : currentScreen === 'reset-password' ? (
+          <PasswordResetForm {...getResetLinkParams()} onNavigateToLogin={() => void returnToLogin()} />
         ) : (
           <LoginForm onNavigateToSignup={() => setCurrentScreen('signup')} />
         )}

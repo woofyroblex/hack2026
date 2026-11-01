@@ -20,7 +20,7 @@ from notifications.services import EmailQueueError, queue_email
 from payments.services import InvalidPayment, PaymentConflict, record_payment
 from .models import DocumentJob, Invoice, InvoiceStatus
 from .serializers import serialize_invoice
-from .services.documents import queue_invoice_pdf
+from .services.documents import document_key, queue_invoice_pdf
 from .services.status import InvalidInvoiceTransition, transition_invoice_status
 
 
@@ -156,7 +156,13 @@ class InvoicePDFView(APIView):
 
     def get(self, request, pk):
         invoice = get_invoice(request, pk, portal=self.portal)
-        job = queue_invoice_pdf(invoice)
+        job = DocumentJob.objects.filter(dedupe_key=document_key(invoice)).first()
+        if job is None:
+            return Response({
+                "code": "DOCUMENT_NOT_REQUESTED",
+                "message": "Request PDF generation before checking its status.",
+                "fields": {},
+            }, status=404)
         if job.status == DocumentJob.Status.SUCCEEDED:
             try:
                 document = default_storage.open(job.storage_key, "rb")
@@ -166,18 +172,16 @@ class InvoicePDFView(APIView):
         return Response(serialize_job(job, request, portal=self.portal), status=503 if job.status == DocumentJob.Status.FAILED else 202)
 
     def post(self, request, pk):
-        # Portal routes bind this class through a GET-only subclass below.
-        invoice = get_invoice(request, pk)
+        invoice = get_invoice(request, pk, portal=self.portal)
         job = queue_invoice_pdf(invoice, retry_failed=True)
         if job.status == DocumentJob.Status.SUCCEEDED and not default_storage.exists(job.storage_key):
             DocumentJob.objects.filter(pk=job.pk).update(status=DocumentJob.Status.FAILED)
             job = queue_invoice_pdf(invoice, retry_failed=True)
-        return Response(serialize_job(job, request), status=202 if job.status != DocumentJob.Status.SUCCEEDED else 200)
+        return Response(serialize_job(job, request, portal=self.portal), status=202 if job.status != DocumentJob.Status.SUCCEEDED else 200)
 
 
 class PortalInvoicePDFView(InvoicePDFView):
     portal = True
-    http_method_names = ["get", "head", "options"]
 
 
 class DocumentJobView(APIView):

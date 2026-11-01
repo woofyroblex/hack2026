@@ -1,8 +1,8 @@
 from datetime import date
 from decimal import Decimal
 
-from django.core.exceptions import ValidationError
 from django.test import TestCase
+from rest_framework.exceptions import ValidationError
 
 from plans.models import Plan
 from products.models import Product, ProductVariant, TaxRule
@@ -30,11 +30,11 @@ class CatalogPricingTests(TestCase):
             effective_date=date(2026, 10, 31),
         )
 
-        self.assertEqual(result["subtotal"], "220.00")
-        self.assertEqual(result["total_tax"], "26.60")
-        self.assertEqual(result["final_total"], "246.60")
-        self.assertEqual(result["lines"][0]["effective_unit_price"], "60.00")
-        self.assertEqual(result["lines"][0]["final_line_total"], "141.60")
+        self.assertEqual(result["subtotal"], Decimal("220.00"))
+        self.assertEqual(result["total_tax"], Decimal("26.60"))
+        self.assertEqual(result["final_total"], Decimal("246.60"))
+        self.assertEqual(result["lines"][0]["effective_unit_price"], Decimal("60.00"))
+        self.assertEqual(result["lines"][0]["final_line_total"], Decimal("141.60"))
 
     def test_variant_must_belong_to_submitted_product(self):
         first = Product.objects.create(name="First")

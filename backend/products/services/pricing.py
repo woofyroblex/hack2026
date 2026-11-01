@@ -105,7 +105,8 @@ def calculate_price(plan=None, lines=(), discount_to_apply=None, effective_date=
         }
 
     product_entries = []
-    chargeable_quantity = 0
+    # A billable plan itself supplies one unit toward its minimum quantity.
+    chargeable_quantity = 1 if plan is not None else 0
     for line_index, line in enumerate(lines):
         product = _get(line, "product")
         if product is None:

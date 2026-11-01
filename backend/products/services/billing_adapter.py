@@ -16,7 +16,12 @@ from discounts.services import (
 from products.services.catalog_adapter import calculate_price
 
 
-def _next_cycle_start(start: date, cadence: str) -> date:
+def _next_cycle_start(
+    start: date,
+    cadence: str,
+    anchor_day: int | None = None,
+    anchor_month: int | None = None,
+) -> date:
     if cadence == "daily":
         return start + timedelta(days=1)
     if cadence == "weekly":
@@ -24,12 +29,13 @@ def _next_cycle_start(start: date, cadence: str) -> date:
     if cadence == "monthly":
         year = start.year + (1 if start.month == 12 else 0)
         month = 1 if start.month == 12 else start.month + 1
-        day = min(start.day, calendar.monthrange(year, month)[1])
+        day = min(anchor_day or start.day, calendar.monthrange(year, month)[1])
         return date(year, month, day)
     if cadence == "yearly":
         year = start.year + 1
-        day = min(start.day, calendar.monthrange(year, start.month)[1])
-        return date(year, start.month, day)
+        month = anchor_month or start.month
+        day = min(anchor_day or start.day, calendar.monthrange(year, month)[1])
+        return date(year, month, day)
     raise ValidationError(f"Unsupported billing cadence: {cadence}.")
 
 
@@ -47,10 +53,14 @@ def _subscription_plan(subscription):
     return {
         "id": plan.pk,
         "name": plan.name,
-        "billing_cadence": plan.billing_cadence,
+        "billing_cadence": subscription.cadence,
         "base_price": subscription.plan_base_price_snapshot
         if subscription.plan_base_price_snapshot is not None
-        else plan.base_price,
+        else (
+            subscription.base_price_snapshot
+            if subscription.base_price_snapshot is not None
+            else plan.base_price
+        ),
         "minimum_quantity": subscription.minimum_quantity_snapshot,
         "tax_rates": taxes,
     }
@@ -92,7 +102,7 @@ def _subscription_lines(subscription):
         variant_dto = None
         variant_label = ""
         if variant is not None:
-            variant_label = f"{variant.attribute_label}: {variant.option_value}"
+            variant_label = line.variant_name_snapshot or f"{variant.attribute_label}: {variant.option_value}"
             variant_dto = {
                 "id": variant.pk,
                 "label": variant_label,
@@ -117,7 +127,12 @@ def price_subscription_period(subscription, period_start: date, period_end: date
     """Price one complete billing cycle from a subscription's plan and line snapshots."""
     plan = _subscription_plan(subscription)
     if plan is not None:
-        expected_end = _next_cycle_start(period_start, plan["billing_cadence"])
+        expected_end = _next_cycle_start(
+            period_start,
+            subscription.cadence,
+            subscription.billing_anchor_day,
+            subscription.billing_anchor_month,
+        )
         if period_end != expected_end:
             raise ValidationError(
                 f"Partial billing cycles are not supported for {plan['billing_cadence']} plans."

@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Eye, EyeOff, Lock, Mail, Loader2, AlertCircle, X, CheckCircle2, Info } from 'lucide-react'
 import { useAuth } from '../context/useAuth.ts'
-import { formatApiError } from '../api/auth.ts'
+import { formatApiError, requestPasswordResetApi } from '../api/auth.ts'
 
 interface LoginFormProps {
   onNavigateToSignup?: () => void
@@ -22,7 +22,27 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
   // Form states
   const [isLoading, setIsLoading] = useState(false)
   const [dialogNotice, setDialogNotice] = useState<{ title: string; message: string } | null>(null)
+  const [recoveryOpen, setRecoveryOpen] = useState(false)
+  const [recoveryEmail, setRecoveryEmail] = useState('')
+  const [recoveryBusy, setRecoveryBusy] = useState(false)
+  const [recoveryError, setRecoveryError] = useState('')
+  const [recoveryMessage, setRecoveryMessage] = useState('')
   const [loginSuccess, setLoginSuccess] = useState(false)
+
+  const submitPasswordResetRequest = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setRecoveryBusy(true)
+    setRecoveryError('')
+    setRecoveryMessage('')
+    try {
+      const result = await requestPasswordResetApi(recoveryEmail.trim())
+      setRecoveryMessage(result.message)
+    } catch (cause) {
+      setRecoveryError(formatApiError(cause).message)
+    } finally {
+      setRecoveryBusy(false)
+    }
+  }
 
   // Validate email format
   const validateEmail = (value: string): string | undefined => {
@@ -112,7 +132,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
 
   return (
     <div className="w-full max-w-[440px] mx-auto">
-      {/* Informative modal / notice for non-implemented backend flows like Forgot Password / Register */}
+      {/* Account registration notice for contexts without a registration screen. */}
       {dialogNotice && (
         <div
           role="dialog"
@@ -146,6 +166,37 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
         </div>
       )}
 
+      {recoveryOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <section role="dialog" aria-modal="true" aria-labelledby="recovery-title" className="w-full max-w-md rounded-2xl border border-slate-100 bg-white p-6 shadow-2xl sm:p-7">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="recovery-title" className="text-xl font-bold text-slate-900">Reset your password</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">Enter your account email and we’ll send a reset link if an account matches.</p>
+              </div>
+              <button type="button" disabled={recoveryBusy} onClick={() => setRecoveryOpen(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50" aria-label="Close password reset dialog"><X size={20} /></button>
+            </div>
+            {recoveryMessage ? (
+              <div role="status" className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-800">
+                <CheckCircle2 size={18} className="mb-2 text-emerald-700" />
+                <p>{recoveryMessage}</p>
+                <button type="button" onClick={() => setRecoveryOpen(false)} className="mt-3 font-semibold text-emerald-900 underline">Return to sign in</button>
+              </div>
+            ) : (
+              <form onSubmit={event => void submitPasswordResetRequest(event)} className="mt-5 space-y-4">
+                {recoveryError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800">{recoveryError}</p>}
+                <label htmlFor="recovery-email" className="block text-sm font-medium text-slate-700">Email address
+                  <input id="recovery-email" type="email" autoComplete="email" required maxLength={254} disabled={recoveryBusy} value={recoveryEmail} onChange={event => setRecoveryEmail(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50" />
+                </label>
+                <button type="submit" disabled={recoveryBusy} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-wait disabled:opacity-60">
+                  {recoveryBusy ? <><Loader2 size={16} className="animate-spin" /> Sending…</> : 'Send reset link'}
+                </button>
+              </form>
+            )}
+          </section>
+        </div>
+      )}
+
       {/* Main Login Card */}
       <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-xl shadow-slate-200/50 p-6 sm:p-8 transition-all">
         {/* Card Header */}
@@ -154,7 +205,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
             Welcome back
           </h1>
           <p className="text-sm text-slate-500 mt-1.5 leading-relaxed">
-            Sign in to continue to your BrightLoop workspace.
+            Sign in with your account. BrightLoop opens the customer portal or staff workspace assigned to you.
           </p>
         </div>
 
@@ -252,13 +303,12 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
               </label>
               <button
                 type="button"
-                onClick={() =>
-                  setDialogNotice({
-                    title: 'Password Reset',
-                    message:
-                      'Password recovery will be enabled once the backend password reset service is activated.',
-                  })
-                }
+                onClick={() => {
+                  setRecoveryEmail(email.trim())
+                  setRecoveryError('')
+                  setRecoveryMessage('')
+                  setRecoveryOpen(true)
+                }}
                 className="text-xs font-semibold text-[#4965F5] hover:text-[#3852de] hover:underline focus:outline-none focus:ring-2 focus:ring-[#4965F5] rounded"
               >
                 Forgot password?
@@ -381,7 +431,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
 
       {/* Trust & Security footer notice */}
       <p className="text-center text-[11px] text-slate-400 mt-5">
-        Protected by enterprise-grade 256-bit encryption. SOC2 Type II Certified.
+        Secure sign-in with protected session cookies.
       </p>
     </div>
   )

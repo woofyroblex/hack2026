@@ -118,7 +118,7 @@ class InvoiceAPITests(TestCase):
 
     def test_cancel_is_idempotent_and_cannot_be_confirmed_or_paid(self):
         for _ in range(2):
-            self.assertEqual(self.client.post(self.url + "cancel/", {}, format="json").status_code, 200)
+            self.assertEqual(self.client.post(self.url + "cancel/", {"reason": "Customer request"}, format="json").status_code, 200)
         self.assertEqual(self.client.post(self.url + "confirm/", {}, format="json").status_code, 400)
         self.assertEqual(self.payment().status_code, 400)
 
@@ -144,8 +144,9 @@ class InvoiceAPITests(TestCase):
 
         self.confirm()
         with TemporaryDirectory() as directory, override_settings(MEDIA_ROOT=directory):
-            with self.captureOnCommitCallbacks(execute=True), patch("billing.tasks.render_invoice_pdf.delay") as dispatch:
-                queued = self.client.post(self.url + "pdf/", {}, format="json")
+            with patch("billing.tasks.render_invoice_pdf.delay") as dispatch:
+                with self.captureOnCommitCallbacks(execute=True):
+                    queued = self.client.post(self.url + "pdf/", {}, format="json")
             self.assertEqual(queued.status_code, 202)
             dispatch.assert_called_once()
             self.assertEqual(self.client.get(self.url + "pdf/").status_code, 202)
@@ -159,11 +160,11 @@ class InvoiceAPITests(TestCase):
             self.client.force_authenticate(self.owner)
             portal_pdf = self.client.get(self.url.replace("/invoices/", "/portal/invoices/") + "pdf/")
             self.assertEqual(portal_pdf.status_code, 200)
-            portal_pdf.close()
             self.client.force_authenticate(self.staff)
-            with self.captureOnCommitCallbacks(execute=True), patch("notifications.tasks.deliver_email.delay") as dispatch:
-                sent = self.client.post(self.url + "send/", {}, format="json")
-                retry = self.client.post(self.url + "send/", {}, format="json")
+            with patch("notifications.tasks.deliver_email.delay") as dispatch:
+                with self.captureOnCommitCallbacks(execute=True):
+                    sent = self.client.post(self.url + "send/", {}, format="json")
+                    retry = self.client.post(self.url + "send/", {}, format="json")
             self.assertEqual(sent.status_code, 202)
             self.assertEqual(sent.data["email_id"], retry.data["email_id"])
             dispatch.assert_called_once()

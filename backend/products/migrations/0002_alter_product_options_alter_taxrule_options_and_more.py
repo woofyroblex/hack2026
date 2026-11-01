@@ -3,15 +3,26 @@
 from decimal import Decimal
 import django.core.validators
 from django.db import migrations, models
+from config import migration_compat
 
 
 class PreserveLegacyField(migrations.RemoveField):
+    def _table_columns(self, schema_editor, model):
+        with schema_editor.connection.cursor() as cursor:
+            return {
+                column.name
+                for column in schema_editor.connection.introspection.get_table_description(cursor, model._meta.db_table)
+            }
+
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         model = from_state.apps.get_model(app_label, self.model_name)
         field = model._meta.get_field(self.name)
+        columns = self._table_columns(schema_editor, model)
         table = schema_editor.quote_name(model._meta.db_table)
         old = schema_editor.quote_name(field.column)
         new = schema_editor.quote_name("legacy_" + field.column)
+        if field.column not in columns or "legacy_" + field.column in columns:
+            return
         schema_editor.execute(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}")
         # Retained for audit; it must not prevent inserts through the corrected model.
         if schema_editor.connection.vendor == "postgresql":
@@ -19,9 +30,12 @@ class PreserveLegacyField(migrations.RemoveField):
 
     def database_backwards(self, app_label, schema_editor, from_state, to_state):
         model = to_state.apps.get_model(app_label, self.model_name)
+        columns = self._table_columns(schema_editor, model)
         table = schema_editor.quote_name(model._meta.db_table)
         old = schema_editor.quote_name("legacy_" + self.name)
         new = schema_editor.quote_name(self.name)
+        if "legacy_" + self.name not in columns or self.name in columns:
+            return
         schema_editor.execute(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}")
 
 
@@ -40,7 +54,7 @@ class Migration(migrations.Migration):
             name='taxrule',
             options={'ordering': ['name'], 'verbose_name': 'Tax Rule', 'verbose_name_plural': 'Tax Rules'},
         ),
-        migrations.RemoveConstraint(
+        migration_compat.RemoveConstraint(
             model_name='productvariant',
             name='product_variant_option_uq',
         ),
@@ -64,42 +78,48 @@ class Migration(migrations.Migration):
             model_name='taxrule',
             name='type',
         ),
-        migrations.AddField(
+        migration_compat.AddField(
             model_name='product',
             name='cost_price',
             field=models.DecimalField(decimal_places=2, default=Decimal('0.00'), help_text='Internal cost price. Never expose through customer APIs.', max_digits=10, validators=[django.core.validators.MinValueValidator(Decimal('0.00'))]),
         ),
-        migrations.AddField(
+        migration_compat.AddField(
             model_name='product',
             name='notes',
             field=models.TextField(blank=True, default='', help_text='Internal administrative notes. Hidden from customers.'),
         ),
-        migrations.AddField(
+        migration_compat.AddField(
             model_name='product',
             name='sales_price',
             field=models.DecimalField(decimal_places=2, default=Decimal('0.00'), max_digits=10, validators=[django.core.validators.MinValueValidator(Decimal('0.00'))]),
         ),
-        migrations.AddField(
+        migration_compat.AddField(
             model_name='product',
             name='type',
             field=models.CharField(choices=[('service', 'Service'), ('consumable', 'Consumable'), ('addon', 'Add-on')], default='service', max_length=32),
         ),
-        migrations.AddField(
+        migration_compat.AddField(
             model_name='taxrule',
             name='percentage_rate',
             field=models.DecimalField(decimal_places=2, default=Decimal('0.00'), max_digits=5, validators=[django.core.validators.MinValueValidator(Decimal('0.00')), django.core.validators.MaxValueValidator(Decimal('100.00'))]),
         ),
-        migrations.AlterField(
-            model_name='product',
-            name='name',
-            field=models.CharField(db_index=True, max_length=255),
+        migrations.SeparateDatabaseAndState(
+            database_operations=[],
+            state_operations=[migrations.AlterField(
+                model_name='product',
+                name='name',
+                field=models.CharField(db_index=True, max_length=255),
+            )],
         ),
-        migrations.AlterField(
-            model_name='taxrule',
-            name='name',
-            field=models.CharField(max_length=64, unique=True),
+        migrations.SeparateDatabaseAndState(
+            database_operations=[],
+            state_operations=[migrations.AlterField(
+                model_name='taxrule',
+                name='name',
+                field=models.CharField(max_length=64, unique=True),
+            )],
         ),
-        migrations.AddConstraint(
+        migration_compat.AddConstraint(
             model_name='productvariant',
             constraint=models.UniqueConstraint(fields=('product', 'attribute_label', 'option_value'), name='unique_product_variant_option'),
         ),

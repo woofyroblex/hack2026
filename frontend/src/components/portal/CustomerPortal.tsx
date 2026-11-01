@@ -12,13 +12,15 @@ import { ErrorNotice, Loading, money, dateLabel, inputClass } from '../shared/Wo
 
 type PortalTab = 'overview' | 'subscriptions' | 'invoices' | 'profile'
 type PortalSummary = { currency: string; active_subscriptions: number; total_subscriptions: number; issued_invoices: number; outstanding: string; next_billing_date: string | null }
-type PortalProfile = { full_name: string; email: string; company: string; phone: string; billing_address: string }
+type PortalProfile = { full_name: string; email: string; company: string; phone: string; billing_address: Record<string, string> }
 type MeResponse = { full_name?: string; name?: string; email?: string; customer?: { name?: string; company?: string; phone?: string; billing_address?: string | Record<string, string> } }
 
-function addressText(value?: string | Record<string, string>) {
-  if (typeof value === 'string') return value
-  if (value && typeof value === 'object') return Object.values(value).filter(Boolean).join(', ')
-  return ''
+function addressFields(value?: string | Record<string, string>): Record<string, string> {
+  if (typeof value === 'string') return value ? { line1: value } : {}
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+  }
+  return {}
 }
 
 export function CustomerPortal() {
@@ -29,7 +31,7 @@ export function CustomerPortal() {
   const [profile, setProfile] = useState<PortalProfile>({
     full_name: user?.full_name || user?.name || '',
     email: user?.email || '',
-    company: '', phone: '', billing_address: '',
+    company: '', phone: '', billing_address: {},
   })
   const [profileLoading, setProfileLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -59,7 +61,7 @@ export function CustomerPortal() {
         email: data.email || '',
         company: data.customer?.company || '',
         phone: data.customer?.phone || '',
-        billing_address: addressText(data.customer?.billing_address),
+        billing_address: addressFields(data.customer?.billing_address),
       })
     }).catch(cause => { if (active) setError(formatApiError(cause).message) })
       .finally(() => { if (active) setProfileLoading(false) })
@@ -72,12 +74,19 @@ export function CustomerPortal() {
     setError('')
     setNotice('')
     try {
-      await apiClient.patch(AUTH_CONFIG.endpoints.me, {
+      const { data } = await apiClient.patch<MeResponse>(AUTH_CONFIG.endpoints.me, {
         full_name: profile.full_name,
         company: profile.company,
         phone: profile.phone,
         billing_address: profile.billing_address,
       })
+      setProfile(current => ({
+        ...current,
+        full_name: data.full_name || data.name || current.full_name,
+        company: data.customer?.company || '',
+        phone: data.customer?.phone || '',
+        billing_address: addressFields(data.customer?.billing_address),
+      }))
       setNotice('Your billing profile was updated.')
     } catch (cause) {
       setError(formatApiError(cause).message)
@@ -111,7 +120,7 @@ export function CustomerPortal() {
       </>}
       {tab === 'subscriptions' && <SubscriptionWorkspace portalMode/>}
       {tab === 'invoices' && <InvoiceWorkspace portal/>}
-      {tab === 'profile' && <section className="max-w-3xl rounded-xl border border-slate-200 bg-white p-5 sm:p-7"><div className="mb-6"><h1 className="text-xl font-semibold">Billing profile</h1><p className="mt-1 text-sm text-slate-500">Keep your contact details current for invoices and account notices.</p></div>{profileLoading ? <Loading label="Loading your profile…"/> : <form className="space-y-5" onSubmit={saveProfile}><ErrorNotice message={error}/>{notice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">{notice}</p>}<div className="grid gap-4 sm:grid-cols-2"><label className="block text-sm font-medium text-slate-700">Full name<input required maxLength={200} className={`${inputClass} mt-1.5`} value={profile.full_name} onChange={event => setProfile(value => ({ ...value, full_name: event.target.value }))}/></label><label className="block text-sm font-medium text-slate-700">Email<input disabled className={`${inputClass} mt-1.5 bg-slate-50`} value={profile.email}/></label><label className="block text-sm font-medium text-slate-700">Company<input maxLength={255} className={`${inputClass} mt-1.5`} value={profile.company} onChange={event => setProfile(value => ({ ...value, company: event.target.value }))}/></label><label className="block text-sm font-medium text-slate-700">Phone<input maxLength={40} className={`${inputClass} mt-1.5`} value={profile.phone} onChange={event => setProfile(value => ({ ...value, phone: event.target.value }))}/></label></div><label className="block text-sm font-medium text-slate-700">Billing address<textarea rows={3} maxLength={4000} className={`${inputClass} mt-1.5`} value={profile.billing_address} onChange={event => setProfile(value => ({ ...value, billing_address: event.target.value }))}/></label><div className="flex justify-end border-t border-slate-100 pt-4"><button disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">{saving ? <RefreshCw size={16} className="animate-spin"/> : <Save size={16}/>}Save billing profile</button></div></form>}</section>}
+      {tab === 'profile' && <section className="max-w-3xl rounded-xl border border-slate-200 bg-white p-5 sm:p-7"><div className="mb-6"><h1 className="text-xl font-semibold">Billing profile</h1><p className="mt-1 text-sm text-slate-500">Keep your contact details current for invoices and account notices.</p></div>{profileLoading ? <Loading label="Loading your profile…"/> : <form className="space-y-5" onSubmit={saveProfile}><ErrorNotice message={error}/>{notice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">{notice}</p>}<div className="grid gap-4 sm:grid-cols-2"><label className="block text-sm font-medium text-slate-700">Full name<input required maxLength={200} className={`${inputClass} mt-1.5`} value={profile.full_name} onChange={event => setProfile(value => ({ ...value, full_name: event.target.value }))}/></label><label className="block text-sm font-medium text-slate-700">Email<input disabled className={`${inputClass} mt-1.5 bg-slate-50`} value={profile.email}/></label><label className="block text-sm font-medium text-slate-700">Company<input maxLength={255} className={`${inputClass} mt-1.5`} value={profile.company} onChange={event => setProfile(value => ({ ...value, company: event.target.value }))}/></label><label className="block text-sm font-medium text-slate-700">Phone<input maxLength={40} className={`${inputClass} mt-1.5`} value={profile.phone} onChange={event => setProfile(value => ({ ...value, phone: event.target.value }))}/></label></div><fieldset className="space-y-4"><legend className="text-sm font-medium text-slate-700">Billing address</legend><label className="block text-sm font-medium text-slate-700">Address<input maxLength={255} className={`${inputClass} mt-1.5`} value={profile.billing_address.line1 || ''} onChange={event => setProfile(value => ({ ...value, billing_address: { ...value.billing_address, line1: event.target.value } }))}/></label><div className="grid gap-4 sm:grid-cols-2">{([['city', 'City'], ['state', 'State or region'], ['postal_code', 'Postal code'], ['country', 'Country']] as const).map(([key, label]) => <label key={key} className="block text-sm font-medium text-slate-700">{label}<input maxLength={100} className={`${inputClass} mt-1.5`} value={profile.billing_address[key] || ''} onChange={event => setProfile(value => ({ ...value, billing_address: { ...value.billing_address, [key]: event.target.value } }))}/></label>)}</div></fieldset><div className="flex justify-end border-t border-slate-100 pt-4"><button disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">{saving ? <RefreshCw size={16} className="animate-spin"/> : <Save size={16}/>}Save billing profile</button></div></form>}</section>}
     </main>
   </div>
 }
