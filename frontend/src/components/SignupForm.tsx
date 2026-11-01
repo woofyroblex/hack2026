@@ -555,10 +555,6 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onNavigateToLogin }) => 
         </div>
       </div>
 
-      {/* Trust & Security footer notice */}
-      <p className="text-center text-[11px] text-slate-400 mt-5">
-        Protected by enterprise-grade 256-bit encryption. SOC2 Type II Certified.
-      </p>
     </div>
   )
 }

@@ -3,20 +3,20 @@ import { BrandLogo } from './components/BrandLogo.tsx'
 import { SubscriptionIllustration } from './components/SubscriptionIllustration.tsx'
 import { LoginForm } from './components/LoginForm.tsx'
 import { SignupForm } from './components/SignupForm.tsx'
-import { PasswordResetForm } from './components/PasswordResetForm.tsx'
+import { PasswordRecoveryForm } from './components/PasswordRecoveryForm.tsx'
 import { WorkspaceDashboard } from './components/WorkspaceDashboard.tsx'
 import { ProtectedRoute } from './components/ProtectedRoute.tsx'
 import { AuthProvider } from './context/AuthContext.tsx'
 import { useAuth } from './context/useAuth.ts'
 import { CheckCircle2, ShieldCheck, Zap } from 'lucide-react'
 
-type AuthScreen = 'login' | 'signup' | 'reset-password'
+type AuthScreen = 'login' | 'signup' | 'recovery'
 
 function getInitialAuthScreen(): AuthScreen {
   if (typeof window === 'undefined') return 'login'
   const hashRoute = window.location.hash.slice(1).split('?')[0].toLowerCase()
   const search = window.location.search.toLowerCase()
-  if (hashRoute === 'reset-password') return 'reset-password'
+  if (hashRoute === 'reset-password' || hashRoute === 'password-reset') return 'recovery'
   if (hashRoute.includes('signup') || search.includes('signup') || search.includes('register')) return 'signup'
   return 'login'
 }
@@ -36,9 +36,11 @@ const MainScreen: React.FC = () => {
 
   // Sync hash when screen changes so users can bookmark or reload
   useEffect(() => {
-    if (currentScreen === 'reset-password') {
+    if (currentScreen === 'recovery') {
       // Keep the one-time uid and token in the hash while the reset form is open.
-      return
+      const hash = window.location.hash.toLowerCase()
+      if (hash.startsWith('#reset-password?')) return
+      window.history.replaceState(null, '', '#password-reset')
     } else if (isAuthenticated) {
       window.history.replaceState(null, '', '#workspace')
     } else if (currentScreen === 'signup') {
@@ -54,7 +56,7 @@ const MainScreen: React.FC = () => {
   }
 
   // If user is authenticated, render the protected workspace dashboard
-  if (isAuthenticated && currentScreen !== 'reset-password') {
+  if (isAuthenticated && currentScreen !== 'recovery') {
     return (
       <ProtectedRoute>
         <WorkspaceDashboard />
@@ -85,8 +87,7 @@ const MainScreen: React.FC = () => {
         <header className="relative z-10 flex items-center justify-between">
           <BrandLogo variant="dark" size="md" showBadge />
           <div className="hidden sm:flex items-center gap-2 text-xs font-medium text-slate-400 bg-white/5 border border-white/10 px-3 py-1.5 rounded-full">
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span>Systems Operational</span>
+            <span>Subscriptions · Billing · Customer portal</span>
           </div>
         </header>
 
@@ -95,7 +96,7 @@ const MainScreen: React.FC = () => {
           <div className="space-y-4 mb-6 lg:mb-8 text-center lg:text-left">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#4965F5]/15 border border-[#4965F5]/30 text-xs font-semibold text-[#38BDF8]">
               <Zap className="w-3.5 h-3.5 text-[#38BDF8]" />
-              <span>Next-Gen Subscription Intelligence</span>
+              <span>Subscription billing workspace</span>
             </div>
 
             <h2 className="text-3xl sm:text-4xl xl:text-5xl font-black text-white tracking-tight leading-[1.15]">
@@ -106,7 +107,7 @@ const MainScreen: React.FC = () => {
             </h2>
 
             <p className="text-sm sm:text-base text-slate-300 max-w-lg mx-auto lg:mx-0 leading-relaxed">
-              One workspace for customer records, subscription lifecycle actions, and recurring billing schedules.
+              Manage customer records, subscription changes, invoices, and recurring billing in one workspace.
             </p>
           </div>
 
@@ -132,7 +133,7 @@ const MainScreen: React.FC = () => {
         <footer className="relative z-10 pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-4 text-xs text-slate-400">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-[#38BDF8]" />
-            <span>Secure account access for subscription management</span>
+            <span>Separate workspaces for staff and customers</span>
           </div>
         </footer>
       </section>
@@ -141,7 +142,7 @@ const MainScreen: React.FC = () => {
       {/* RIGHT COLUMN: CLEAN MODERN AUTH CARD (LOGIN / SIGNUP)     */}
       {/* ========================================================= */}
       <main
-        aria-label={currentScreen === 'signup' ? 'BrightLoop Sign Up' : currentScreen === 'reset-password' ? 'BrightLoop Password Reset' : 'BrightLoop Sign In'}
+        aria-label={currentScreen === 'signup' ? 'BrightLoop Sign Up' : currentScreen === 'recovery' ? 'Password recovery' : 'BrightLoop Sign In'}
         className="lg:w-1/2 xl:w-[48%] flex flex-col justify-center items-center p-6 sm:p-10 lg:p-14"
       >
         {/* Mobile branding header displayed on mobile devices */}
@@ -157,10 +158,13 @@ const MainScreen: React.FC = () => {
           </div>
         ) : currentScreen === 'signup' ? (
           <SignupForm onNavigateToLogin={() => setCurrentScreen('login')} />
-        ) : currentScreen === 'reset-password' ? (
-          <PasswordResetForm {...getResetLinkParams()} onNavigateToLogin={() => void returnToLogin()} />
+        ) : currentScreen === 'recovery' ? (
+          <PasswordRecoveryForm
+            {...getResetLinkParams()}
+            onNavigateToLogin={() => void returnToLogin()}
+          />
         ) : (
-          <LoginForm onNavigateToSignup={() => setCurrentScreen('signup')} />
+          <LoginForm onNavigateToSignup={() => setCurrentScreen('signup')} onNavigateToRecovery={() => setCurrentScreen('recovery')} />
         )}
       </main>
     </div>

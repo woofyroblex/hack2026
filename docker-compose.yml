@@ -23,6 +23,7 @@ x-backend: &backend
     POSTGRES_PORT: "5432"
     CELERY_BROKER_URL: redis://redis:6379/0
     CELERY_RESULT_BACKEND: redis://redis:6379/1
+    REDIS_CACHE_URL: redis://redis:6379/2
     EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
     DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-no-reply@localhost}
     EMAIL_HOST: ${EMAIL_HOST:-}

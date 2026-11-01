@@ -71,6 +71,7 @@ const actionNames: Record<string, string> = {
   quote: 'Create quotation',
   send: 'Send quotation',
   confirm: 'Confirm quote',
+  reopen: 'Reopen draft',
   activate: 'Activate',
   pause: 'Pause',
   resume: 'Resume',

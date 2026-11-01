@@ -1,1 +1,5 @@
-Invoice {{ invoice_id }} has been cancelled.
+Hello {{ customer_name }},
+
+Invoice {{ invoice_number }} has been cancelled.
+
+Sign in to view your billing history: {{ portal_url }}

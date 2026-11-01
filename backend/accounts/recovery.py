@@ -9,14 +9,10 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from rest_framework import serializers
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from notifications.services import queue_email
-
-
-class RecoveryThrottle(AnonRateThrottle):
-    rate = '10/hour'
+from accounts.throttling import PasswordRecoveryThrottle
 
 
 def change_password(user, password):
@@ -33,7 +29,7 @@ def change_password(user, password):
 class PasswordResetView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_classes = [RecoveryThrottle]
+    throttle_classes = [PasswordRecoveryThrottle]
 
     def post(self, request):
         email = serializers.EmailField().run_validation(request.data.get('email'))
@@ -49,7 +45,7 @@ class PasswordResetView(APIView):
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_classes = [RecoveryThrottle]
+    throttle_classes = [PasswordRecoveryThrottle]
 
     @transaction.atomic
     def post(self, request):

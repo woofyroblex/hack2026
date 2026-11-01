@@ -1,13 +1,14 @@
 import React, { useState } from 'react'
-import { Eye, EyeOff, Lock, Mail, Loader2, AlertCircle, X, CheckCircle2, Info } from 'lucide-react'
+import { Eye, EyeOff, Lock, Mail, Loader2, AlertCircle, X, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '../context/useAuth.ts'
-import { formatApiError, requestPasswordResetApi } from '../api/auth.ts'
+import { formatApiError } from '../api/auth.ts'
 
 interface LoginFormProps {
-  onNavigateToSignup?: () => void
+  onNavigateToSignup: () => void
+  onNavigateToRecovery: () => void
 }
 
-export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
+export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup, onNavigateToRecovery }) => {
   const { login } = useAuth()
 
   const [email, setEmail] = useState('')
@@ -21,28 +22,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
 
   // Form states
   const [isLoading, setIsLoading] = useState(false)
-  const [dialogNotice, setDialogNotice] = useState<{ title: string; message: string } | null>(null)
-  const [recoveryOpen, setRecoveryOpen] = useState(false)
-  const [recoveryEmail, setRecoveryEmail] = useState('')
-  const [recoveryBusy, setRecoveryBusy] = useState(false)
-  const [recoveryError, setRecoveryError] = useState('')
-  const [recoveryMessage, setRecoveryMessage] = useState('')
   const [loginSuccess, setLoginSuccess] = useState(false)
-
-  const submitPasswordResetRequest = async (event: React.FormEvent) => {
-    event.preventDefault()
-    setRecoveryBusy(true)
-    setRecoveryError('')
-    setRecoveryMessage('')
-    try {
-      const result = await requestPasswordResetApi(recoveryEmail.trim())
-      setRecoveryMessage(result.message)
-    } catch (cause) {
-      setRecoveryError(formatApiError(cause).message)
-    } finally {
-      setRecoveryBusy(false)
-    }
-  }
 
   // Validate email format
   const validateEmail = (value: string): string | undefined => {
@@ -60,9 +40,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
   const validatePassword = (value: string): string | undefined => {
     if (!value) {
       return 'Password is required.'
-    }
-    if (value.length < 6) {
-      return 'Password must be at least 6 characters.'
     }
     return undefined
   }
@@ -132,71 +109,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
 
   return (
     <div className="w-full max-w-[440px] mx-auto">
-      {/* Account registration notice for contexts without a registration screen. */}
-      {dialogNotice && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in"
-        >
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-slate-100 relative">
-            <button
-              type="button"
-              onClick={() => setDialogNotice(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-[#4965F5]"
-              aria-label="Close dialog"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <div className="w-10 h-10 rounded-full bg-blue-50 text-[#4965F5] flex items-center justify-center mb-3">
-              <Info className="w-5 h-5" />
-            </div>
-            <h3 className="text-lg font-bold text-[#172033]">{dialogNotice.title}</h3>
-            <p className="text-sm text-slate-600 mt-2 leading-relaxed">{dialogNotice.message}</p>
-            <div className="mt-5">
-              <button
-                type="button"
-                onClick={() => setDialogNotice(null)}
-                className="w-full py-2.5 px-4 bg-[#4965F5] hover:bg-[#3852de] text-white text-sm font-semibold rounded-xl transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#4965F5]"
-              >
-                Understood
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {recoveryOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-          <section role="dialog" aria-modal="true" aria-labelledby="recovery-title" className="w-full max-w-md rounded-2xl border border-slate-100 bg-white p-6 shadow-2xl sm:p-7">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 id="recovery-title" className="text-xl font-bold text-slate-900">Reset your password</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">Enter your account email and we’ll send a reset link if an account matches.</p>
-              </div>
-              <button type="button" disabled={recoveryBusy} onClick={() => setRecoveryOpen(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50" aria-label="Close password reset dialog"><X size={20} /></button>
-            </div>
-            {recoveryMessage ? (
-              <div role="status" className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-800">
-                <CheckCircle2 size={18} className="mb-2 text-emerald-700" />
-                <p>{recoveryMessage}</p>
-                <button type="button" onClick={() => setRecoveryOpen(false)} className="mt-3 font-semibold text-emerald-900 underline">Return to sign in</button>
-              </div>
-            ) : (
-              <form onSubmit={event => void submitPasswordResetRequest(event)} className="mt-5 space-y-4">
-                {recoveryError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800">{recoveryError}</p>}
-                <label htmlFor="recovery-email" className="block text-sm font-medium text-slate-700">Email address
-                  <input id="recovery-email" type="email" autoComplete="email" required maxLength={254} disabled={recoveryBusy} value={recoveryEmail} onChange={event => setRecoveryEmail(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50" />
-                </label>
-                <button type="submit" disabled={recoveryBusy} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-wait disabled:opacity-60">
-                  {recoveryBusy ? <><Loader2 size={16} className="animate-spin" /> Sending…</> : 'Send reset link'}
-                </button>
-              </form>
-            )}
-          </section>
-        </div>
-      )}
-
       {/* Main Login Card */}
       <div className="bg-white rounded-2xl border border-[#E5E7EB] shadow-xl shadow-slate-200/50 p-6 sm:p-8 transition-all">
         {/* Card Header */}
@@ -303,12 +215,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
               </label>
               <button
                 type="button"
-                onClick={() => {
-                  setRecoveryEmail(email.trim())
-                  setRecoveryError('')
-                  setRecoveryMessage('')
-                  setRecoveryOpen(true)
-                }}
+                onClick={onNavigateToRecovery}
                 className="text-xs font-semibold text-[#4965F5] hover:text-[#3852de] hover:underline focus:outline-none focus:ring-2 focus:ring-[#4965F5] rounded"
               >
                 Forgot password?
@@ -411,17 +318,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onNavigateToSignup }) => {
         <div className="text-center">
           <button
             type="button"
-            onClick={() => {
-              if (onNavigateToSignup) {
-                onNavigateToSignup()
-              } else {
-                setDialogNotice({
-                  title: 'Account Registration',
-                  message:
-                    'Self-serve workspace registration will be activated in the next development phase.',
-                })
-              }
-            }}
+            onClick={onNavigateToSignup}
             className="w-full py-2.5 px-4 rounded-xl border border-[#E5E7EB] bg-slate-50/60 hover:bg-slate-100 text-[#172033] font-semibold text-xs sm:text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-[#4965F5]"
           >
             Create an account
