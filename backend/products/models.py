@@ -5,14 +5,6 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 
-
-from decimal import Decimal
-
-from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator, MinValueValidator
-from django.db import models
-
-
 class TaxRule(models.Model):
     """Additive percentage tax rule applied to products and plans."""
 
@@ -33,18 +25,15 @@ class TaxRule(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ("name",)
+        ordering = ["name"]
+        verbose_name = "Tax Rule"
+        verbose_name_plural = "Tax Rules"
         constraints = [
             models.CheckConstraint(check=models.Q(percentage_rate__gte=0, percentage_rate__lte=100), name="tax_rate_range_ck"),
         ]
 
     def __str__(self):
         return f"{self.name} ({self.percentage_rate}%)"
-
-    class Meta:
-        ordering = ["name"]
-        verbose_name = "Tax Rule"
-        verbose_name_plural = "Tax Rules"
 
 
 class Product(models.Model):
@@ -98,7 +87,7 @@ class Product(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ("name",)
+        ordering = ["name"]
         constraints = [
             models.CheckConstraint(check=models.Q(sales_price__gte=0), name="product_sales_price_nonneg_ck"),
             models.CheckConstraint(check=models.Q(cost_price__gte=0), name="product_cost_price_nonneg_ck"),
@@ -106,9 +95,6 @@ class Product(models.Model):
 
     def __str__(self):
         return self.name
-
-    class Meta:
-        ordering = ["name"]
 
 
 class ProductVariant(models.Model):

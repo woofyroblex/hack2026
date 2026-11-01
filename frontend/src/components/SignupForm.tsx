@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Eye, EyeOff, Lock, Mail, User, Loader2, AlertCircle, CheckCircle2, Check, X } from 'lucide-react'
 import { useAuth } from '../context/useAuth.ts'
 import { formatApiError } from '../api/auth.ts'
+import { hasPasswordPunctuation } from '../utils/password.ts'
 
 interface SignupFormProps {
   onNavigateToLogin: () => void
@@ -41,7 +42,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onNavigateToLogin }) => 
   const hasMinLength = password.length >= 9
   const hasUppercase = /[A-Z]/.test(password)
   const hasLowercase = /[a-z]/.test(password)
-  const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>_\-\\+=~`[\]/]/.test(password)
+  const hasSpecialChar = hasPasswordPunctuation(password)
   const isPasswordValid = hasMinLength && hasUppercase && hasLowercase && hasSpecialChar
 
   // Validation functions
@@ -79,7 +80,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onNavigateToLogin }) => 
     if (!/[a-z]/.test(val)) {
       return 'Password must include at least one lowercase letter.'
     }
-    if (!/[!@#$%^&*(),.?":{}|<>_\-\\+=~`[\]/]/.test(val)) {
+    if (!hasPasswordPunctuation(val)) {
       return 'Password must include at least one special character.'
     }
     return undefined
@@ -178,7 +179,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onNavigateToLogin }) => 
             Create an account
           </h1>
           <p className="text-sm text-slate-500 mt-1.5 leading-relaxed">
-            Start your 14-day free trial on BrightLoop. No credit card required.
+            Create an account to access your BrightLoop workspace.
           </p>
         </div>
 
@@ -554,10 +555,6 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onNavigateToLogin }) => 
         </div>
       </div>
 
-      {/* Trust & Security footer notice */}
-      <p className="text-center text-[11px] text-slate-400 mt-5">
-        Protected by enterprise-grade 256-bit encryption. SOC2 Type II Certified.
-      </p>
     </div>
   )
 }

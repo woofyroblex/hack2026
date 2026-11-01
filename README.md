@@ -16,6 +16,31 @@ A team of developers exploring web, mobile, and AI — building, learning, and s
 
 ---
 
+## BrightLoop Subscription Management System
+
+BrightLoop brings the subscription workflow into one workspace: customer and plan selection, server-priced quotations, subscription lifecycle actions, recurring invoices, payment recording, and operational reporting. Staff work from a simple sidebar; customer accounts see an ownership-scoped portal for their subscriptions and issued invoices. Only superusers can create or edit users and permission groups in Django Admin; staff accounts cannot grant themselves elevated access.
+
+PostgreSQL is the source of truth. Django applies pricing and lifecycle rules, Celery handles recurring and document work, and the React client reads and updates records through the authenticated `/api/v1` API. Beat schedules the due-billing scan daily and lifecycle checks every 15 minutes. Configuration stays in Django Admin for this release. Payments are recorded by staff; there is no payment gateway or automatic card charging. Email uses Django's console backend by default; configure SMTP environment variables to deliver messages outside the container logs.
+
+For a local demonstration, start the Compose stack, create an administrator account, and seed the catalog plus a due subscription:
+
+```bash
+docker compose up --build
+```
+
+Once the services have started, use a second terminal for the administrator account and demo data:
+
+```bash
+docker compose exec backend python manage.py createsuperuser
+docker compose exec backend python manage.py seed_subscription_demo
+```
+
+Sign in with the admin account, run `docker compose exec backend python manage.py scan_due_subscriptions`, then confirm the draft invoice and record a payment in the invoice workspace. The Payments section lets staff search and filter recorded receipts. Repeating the scan does not create a second invoice for the same subscription cycle. Product configuration and lifecycle policies are managed in Django Admin. Public signups create customer accounts; only an administrator can create staff accounts.
+
+The implementation uses the billing defaults documented in the [integration plan](docs/superpowers/plans/2026-10-31-brightloop-integration.md), including one currency per invoice, additive percentage taxes, no proration, and immutable manually recorded payments. It does not include refunds, payment corrections, or a payment processor. The under-two-second target in the supplied brief has not yet been measured on a defined dataset.
+
+---
+
 ## Meet the team
 
 Get to know the people behind the code. Explore our portfolios for projects, experience, and more.
@@ -63,8 +88,6 @@ Get to know the people behind the code. Explore our portfolios for projects, exp
 | TypeScript | Type safety |
 | Vite | Development server and build tool |
 | Tailwind CSS | Styling |
-| shadcn/ui | UI components |
-| React Router DOM | Routing |
 | Axios | API communication |
 | Lucide React | Icons |
 | Recharts | Dashboard charts |
@@ -90,11 +113,10 @@ Get to know the people behind the code. Explore our portfolios for projects, exp
 | Technology | Purpose |
 |---|---|
 | Git & GitHub | Version control |
-| GitHub Actions | CI/CD |
+| GitHub Actions | Application checks and secret scanning |
 | Docker | Containerization |
-| Postman | API testing |
-| Pytest | Backend testing |
-| Vitest | Frontend testing |
+| Django test framework | Backend checks |
+| Node.js test runner | Frontend checks |
 
 ---
 
@@ -216,7 +238,7 @@ Docker Desktop (or Docker Engine with the Compose plugin) is required. From the 
    docker compose up --build
    ```
 
-   Open [http://localhost:8080](http://localhost:8080); Django admin is at [http://localhost:8080/admin/](http://localhost:8080/admin/). Compose waits for PostgreSQL, applies migrations, then starts Django, the Celery worker, Celery Beat, Redis, and the production-built React frontend. The backend, database, and Redis are reachable only inside the Compose network. Authentication uses a short-lived in-memory access token and an HttpOnly refresh cookie. Use a staff account to open **Staff Operations** and manage subscriptions.
+   Open [http://localhost:8080](http://localhost:8080); Django admin is at [http://localhost:8080/admin/](http://localhost:8080/admin/). Compose waits for PostgreSQL, applies migrations, then starts Django, the Celery worker, Celery Beat, Redis, and the production-built React frontend. The backend, database, and Redis are reachable only inside the Compose network. Authentication uses a short-lived in-memory access token and an HttpOnly refresh cookie. Staff sign in to the Overview, Subscriptions, Invoices, and Customers workspace; customer accounts open the customer portal.
 
 3. In another terminal, inspect the stack or create a Django admin user:
 
@@ -227,7 +249,7 @@ Docker Desktop (or Docker Engine with the Compose plugin) is required. From the 
    docker compose exec backend python manage.py check
    ```
 
-   Create demo catalog data and run the recurring billing scan manually with:
+   Create repeatable demo catalog data and one currently due subscription, then run the same recurring billing service used by Celery Beat:
 
    ```bash
    docker compose exec backend python manage.py seed_subscription_demo
@@ -390,9 +412,7 @@ celery -A config beat --loglevel=info
 
 ## Repository
 
-This repository is the starting point for our hackathon work. It includes a CI and security baseline; application code and project details will be added as the project takes shape.
-
-For workflow setup, branch protection, and deployment planning, see the [DevOps guide](DEVOPS.md).
+This repository contains the BrightLoop subscription application and the HACK 2026 team portfolio. The application setup and workflow are documented above; for branch protection, security scanning, and deployment boundaries, see the [DevOps guide](DEVOPS.md).
 
 ---
 

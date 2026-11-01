@@ -156,6 +156,22 @@ export async function getCurrentUserApi(): Promise<User> {
   return response.data
 }
 
+/** Request a password reset without revealing whether the email is registered. */
+export async function requestPasswordResetApi(email: string): Promise<{ message: string }> {
+  const response = await apiClient.post<{ message: string }>(`${AUTH_CONFIG.apiPrefix}/auth/password-reset/`, { email })
+  return response.data
+}
+
+/** Consume a single-use reset link and set the account's new password. */
+export async function confirmPasswordResetApi(payload: {
+  uid: string
+  token: string
+  password: string
+}): Promise<{ message: string }> {
+  const response = await apiClient.post<{ message: string }>(`${AUTH_CONFIG.apiPrefix}/auth/password-reset/confirm/`, payload)
+  return response.data
+}
+
 // Aliases for convenience
 export const getMeApi = getCurrentUserApi
 export const authService = {

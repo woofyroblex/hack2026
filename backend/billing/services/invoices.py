@@ -10,7 +10,7 @@ from django.db import IntegrityError, transaction
 from django.utils.module_loading import import_string
 
 from billing.models import Invoice, InvoiceLine, InvoiceNumberSequence, InvoiceStatus
-from subscriptions.models import Subscription
+from subscriptions.models import Subscription, SubscriptionEvent
 
 
 class InvoiceGenerationError(Exception):

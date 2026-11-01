@@ -86,3 +86,19 @@ class RemoveConstraint(migrations.RemoveConstraint):
             constraints = schema_editor.connection.introspection.get_constraints(cursor, model._meta.db_table)
         if self.name in constraints:
             super().database_forwards(app_label, schema_editor, from_state, to_state)
+
+
+class AddConstraint(migrations.AddConstraint):
+    """Add a constraint only when it is absent from a legacy schema."""
+
+    def database_forwards(self, app_label, schema_editor, from_state, to_state):
+        model = to_state.apps.get_model(app_label, self.model_name)
+        with schema_editor.connection.cursor() as cursor:
+            constraints = schema_editor.connection.introspection.get_constraints(cursor, model._meta.db_table)
+        existing = constraints.get(self.constraint.name)
+        if existing is None:
+            return super().database_forwards(app_label, schema_editor, from_state, to_state)
+
+        expected_columns = [model._meta.get_field(name).column for name in self.constraint.fields]
+        if not existing.get("unique") or existing.get("columns") != expected_columns:
+            raise RuntimeError(f"Existing constraint {self.constraint.name!r} does not match the migration definition.")

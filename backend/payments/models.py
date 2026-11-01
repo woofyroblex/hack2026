@@ -30,6 +30,9 @@ class Payment(models.Model):
 
     class Meta:
         ordering = ("-received_at",)
+        indexes = [
+            models.Index(fields=("currency", "received_at"), name="pay_cur_received_idx"),
+        ]
         constraints = [
             models.CheckConstraint(check=Q(amount__gt=0), name="payment_amount_positive_ck"),
         ]

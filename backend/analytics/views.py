@@ -61,17 +61,23 @@ class SummaryView(APIView):
 
     def get(self, request):
         currency, dates = report_filters(request)
-        invoices = dated(issued(currency), 'confirmed_at__date', dates)
+        invoices = dated(issued(currency), 'confirmed_at__date', dates).annotate(
+            billed_amount=F('total') - F('tax_total'),
+        )
+        current_invoices = issued(currency)
         payments = dated(Payment.objects.filter(currency=currency), 'received_at__date', dates)
-        totals = invoices.aggregate(billed=Sum('total'), outstanding=Sum('balance'))
-        overdue = invoices.filter(due_date__lt=timezone.localdate(), balance__gt=0).aggregate(total=Sum('balance'))['total']
+        billed = invoices.aggregate(total=Sum('billed_amount'))['total']
+        outstanding = current_invoices.aggregate(total=Sum('balance'))['total']
+        overdue = current_invoices.filter(
+            due_date__lt=timezone.localdate(), balance__gt=0,
+        ).aggregate(total=Sum('balance'))['total']
         return Response({
             'currency': currency,
             'active_subscriptions': Subscription.objects.filter(status=Subscription.Status.ACTIVE, currency=currency).count(),
             'customers': Customer.objects.count(),
-            'billed': money(totals['billed']),
+            'billed': money(billed),
             'collected': money(payments.aggregate(total=Sum('amount'))['total']),
-            'outstanding': money(totals['outstanding']), 'overdue': money(overdue),
+            'outstanding': money(outstanding), 'overdue': money(overdue),
         })
 
 
@@ -80,11 +86,14 @@ class RevenueView(APIView):
 
     def get(self, request):
         currency, dates = report_filters(request)
-        invoices = dated(issued(currency), 'confirmed_at__date', dates)
+        invoices = dated(issued(currency), 'confirmed_at__date', dates).annotate(
+            billed_amount=F('total') - F('tax_total'),
+        )
         payments = dated(Payment.objects.filter(currency=currency), 'received_at__date', dates)
         buckets = defaultdict(lambda: {'billed': Decimal('0'), 'collected': Decimal('0')})
         for queryset, field, metric in [(invoices, 'confirmed_at', 'billed'), (payments, 'received_at', 'collected')]:
-            for row in queryset.annotate(month=TruncMonth(field)).values('month').annotate(amount=Sum('total' if metric == 'billed' else 'amount')).order_by('month'):
+            amount_field = 'billed_amount' if metric == 'billed' else 'amount'
+            for row in queryset.annotate(month=TruncMonth(field)).values('month').annotate(amount=Sum(amount_field)).order_by('month'):
                 if row['month']:
                     buckets[row['month'].strftime('%Y-%m')][metric] += row['amount']
         return Response({'currency': currency, 'results': [
@@ -97,8 +106,8 @@ class OverdueView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
-        currency, dates = report_filters(request)
-        queryset = dated(issued(currency), 'confirmed_at__date', dates).filter(
+        currency, _dates = report_filters(request)
+        queryset = issued(currency).filter(
             due_date__lt=timezone.localdate(), balance__gt=0,
         ).select_related('subscription__customer').order_by('due_date', 'id')
         search = request.query_params.get('search', '').strip()

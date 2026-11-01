@@ -62,7 +62,8 @@ def _set_next_cycle(subscription: Subscription, start: date, today: date, skip_r
 @transaction.atomic
 def process_one_cycle(subscription_id: int, today: date | None = None) -> tuple[str, str]:
     today = today or timezone.localdate()
-    subscription = Subscription.objects.select_for_update().select_related('plan', 'customer').get(pk=subscription_id)
+    # Lock only the subscription row; plan/customer joins can be nullable in legacy records.
+    subscription = Subscription.objects.select_for_update(of=('self',)).select_related('plan', 'customer').get(pk=subscription_id)
     start = subscription.next_billing_date
     if not start or start > today:
         return 'NOT_DUE', ''

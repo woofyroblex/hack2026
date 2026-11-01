@@ -2,13 +2,13 @@
 
 ## Current state
 
-The repository now contains a React/TypeScript frontend, a Django REST backend, PostgreSQL, Redis, Celery worker/Beat services, and a Docker Compose setup for local demonstrations. The GitHub Actions workflows still check workflow syntax and scan repository history for secrets; they do not yet install application dependencies, run application checks, or build the frontend/backend. No public deployment target or deployment workflow is configured, so a green check does not establish application quality or deployability.
+The repository contains a React/TypeScript frontend, a Django REST backend, PostgreSQL, Redis, Celery worker/Beat services, and a Docker Compose setup for local demonstrations. GitHub Actions checks workflow syntax, runs backend and frontend checks in CI, starts the complete Compose stack, and scans repository history for secrets. No public deployment target or deployment workflow is configured, so a green check does not establish production deployability or the documented two-second performance target.
 
 ## Architecture and execution
 
 ```mermaid
 flowchart LR
-  PR[Pull request to main or develop] --> CI[CI: actionlint]
+  PR[Pull request to main or develop] --> CI[CI: workflow lint + application integration]
   PR --> Security[Security: secret scan]
   Push[Push to main or develop] --> CI
   Push --> Security
@@ -16,12 +16,13 @@ flowchart LR
   Queue --> Security
   Schedule[Weekly or manual run] --> Security
   Compose[Docker Compose local stack] --> App[React + Django + PostgreSQL + Redis + Celery]
-  CI -. future: add application checks and builds .-> Gate[Protected branch checks]
+  CI --> Gate[Protected branch checks]
   Security --> Gate
   Gate -. future: verified release .-> Deploy[Staging or production]
 ```
 
-- **CI / Workflow lint** checks GitHub Actions files with actionlint. The downloaded Linux binary is versioned and checksum verified; checkout is pinned to a commit. The workflow does not install application dependencies or build the project.
+- **CI / Workflow lint** checks GitHub Actions files with actionlint. The downloaded Linux binary is versioned and checksum verified; checkout is pinned to a commit.
+- **CI / Application integration** builds the backend and frontend images, starts PostgreSQL and Redis, runs Django system and migration checks plus the backend suite, runs the frontend suite/lint/production build, then starts the whole Compose stack and requests the frontend health page. It exercises the configured containers but does not benchmark the under-two-second requirement or simulate production load.
 - **Security / Secret scan** uses the Gitleaks CLI on push, pull requests, merge queues, weekly, and manual dispatch. It scans the history reachable from the checked-out commit and fails on findings, with secrets redacted from logs. The scanner release is checksum verified. Fork PRs use the ordinary `pull_request` event with read-only token permissions and no deployment credentials. A scheduled run checks the default branch only.
 - **Dependabot** proposes weekly updates to GitHub Actions pins. The actionlint and Gitleaks binary versions and SHA-256 checksums must be updated together manually after verifying the upstream release.
 - Concurrent runs for the same event and PR or branch are cancelled when a newer run starts. Separate push and PR runs can occur when directly pushing a protected branch that is also the source of a PR; ordinary fork feature branches do not trigger the push workflows.
@@ -34,7 +35,7 @@ Use `main` for production, `develop` for integration, and `feature/*`, `fix/*`, 
 Repository administrators should:
 
 1. Create `develop` from the appropriate `main` commit and enable GitHub Actions.
-2. Create branch rules or rulesets for `main` and `develop`: require pull requests, review as appropriate, and require the **Workflow lint** and **Secret scan** status checks. Select the actual check names after the first successful runs. Require branches to be up to date if desired; restrict direct pushes and bypasses according to team policy.
+2. Create branch rules or rulesets for `main` and `develop`: require pull requests, review as appropriate, and require the **Workflow lint**, **Application integration**, and **Secret scan** status checks. Select the actual check names after the first successful runs. Require branches to be up to date if desired; restrict direct pushes and bypasses according to team policy.
 3. Review fork workflow approval settings. Fork PRs do not receive repository secrets. Do not use `pull_request_target` to run untrusted PR code.
 4. Enable GitHub's dependency graph, Dependabot alerts, and secret scanning where available for the repository and plan. These settings are not configured by this repository.
 
@@ -55,11 +56,11 @@ actionlint -color
 gitleaks git --redact .
 ```
 
-The second command scans history reachable from the current checkout; it may differ from the commit checked out in CI. These commands validate workflows and scan secrets; they do not run the Django checks, frontend build, or Compose smoke checks. Gitleaks may identify a candidate secret: rotate/revoke exposed credentials immediately, even if the finding is later removed from the current tree. Inspect findings securely and use narrowly scoped exceptions only after review.
+The second command scans history reachable from the current checkout; it may differ from the commit checked out in CI. These commands validate workflows and scan secrets; the **Application integration** workflow runs the Django checks, frontend build, and Compose startup check. Gitleaks may identify a candidate secret: rotate/revoke exposed credentials immediately, even if the finding is later removed from the current tree. Inspect findings securely and use narrowly scoped exceptions only after review.
 
-## Adding application CI
+## CI coverage and remaining work
 
-Extend `ci.yml` with clean installs from the committed Python requirements and npm lockfile, Django system and migration checks, backend tests, frontend lint/type checks and production build, plus a PostgreSQL/Redis-backed integration job where needed. Use the project's real commands and publish test reports even when checks fail. Cache package downloads keyed by the lockfile and runtime, not secrets or built releases. Add dependency vulnerability scanning and language-appropriate code security analysis, and require the chosen checks in branch protection before deploying.
+The current `ci.yml` covers the checked-in application commands using PostgreSQL and Redis through Docker Compose. Keep the Python requirements and npm lockfile authoritative when dependencies change. Add measured performance and concurrency evidence against a documented dataset before claiming the two-second target; the current workflow does not establish that result. Dependency vulnerability scanning and language-specific code security analysis are also not configured yet.
 
 ## Deployment, health checks and recovery
 

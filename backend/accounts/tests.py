@@ -34,7 +34,7 @@ class AuthIntegrationTests(TestCase):
         }, format="json")
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("password", response.data)
+        self.assertIn("password", response.data["fields"])
 
 
 class AccountSecurityTests(TestCase):

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import {
   AlertCircle,
@@ -71,6 +71,7 @@ const actionNames: Record<string, string> = {
   quote: 'Create quotation',
   send: 'Send quotation',
   confirm: 'Confirm quote',
+  reopen: 'Reopen draft',
   activate: 'Activate',
   pause: 'Pause',
   resume: 'Resume',
@@ -105,8 +106,12 @@ export const SubscriptionWorkspace: React.FC<{ portalMode?: boolean }> = ({ port
   const [editing, setEditing] = useState<Subscription | null>(null)
   const [busyAction, setBusyAction] = useState('')
   const [reason, setReason] = useState('')
+  const [detailLoading, setDetailLoading] = useState(false)
+  const listRequestId = useRef(0)
+  const detailRequestId = useRef(0)
 
   const loadSubscriptions = useCallback(async () => {
+    const requestId = ++listRequestId.current
     setLoading(true)
     setError('')
     try {
@@ -115,22 +120,37 @@ export const SubscriptionWorkspace: React.FC<{ portalMode?: boolean }> = ({ port
       if (statusFilter) params.set('status', statusFilter)
       const prefix = portalMode ? '/portal/subscriptions/' : '/subscriptions/'
       const result = await request<{ results: Subscription[] }>(`${prefix}?${params.toString()}`)
-      setSubscriptions(result.results)
+      if (requestId === listRequestId.current) setSubscriptions(result.results)
     } catch (err) {
-      setError((err as Error).message)
+      if (requestId === listRequestId.current) setError((err as Error).message)
     } finally {
-      setLoading(false)
+      if (requestId === listRequestId.current) setLoading(false)
     }
   }, [search, statusFilter, portalMode])
 
-  useEffect(() => { void loadSubscriptions() }, [loadSubscriptions])
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadSubscriptions(), search.trim() ? 180 : 0)
+    return () => {
+      window.clearTimeout(timer)
+      // Ignore an older search/filter response after the view changes.
+      listRequestId.current += 1
+    }
+  }, [loadSubscriptions, search])
 
   async function openDetails(item: Subscription) {
+    const requestId = ++detailRequestId.current
     setError('')
+    setSelected(null)
+    setDetailLoading(true)
     try {
       const prefix = portalMode ? '/portal/subscriptions/' : '/subscriptions/'
-      setSelected(await request<Subscription>(`${prefix}${item.id}/`))
-    } catch (err) { setError((err as Error).message) }
+      const detail = await request<Subscription>(`${prefix}${item.id}/`)
+      if (requestId === detailRequestId.current) setSelected(detail)
+    } catch (err) {
+      if (requestId === detailRequestId.current) setError((err as Error).message)
+    } finally {
+      if (requestId === detailRequestId.current) setDetailLoading(false)
+    }
   }
 
   async function runAction(action: string) {
@@ -186,7 +206,7 @@ export const SubscriptionWorkspace: React.FC<{ portalMode?: boolean }> = ({ port
                 <div className="flex gap-2">
                   <label className="relative flex-1 sm:w-52"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search number or customer" className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-xs outline-none focus:border-blue-400" /></label>
                   <select aria-label="Filter status" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs outline-none"><option value="">All statuses</option>{['DRAFT', 'QUOTATION', 'CONFIRMED', 'ACTIVE', 'PAUSED', 'EXPIRED', 'CLOSED'].map(s => <option key={s}>{s}</option>)}</select>
-                  <button onClick={() => void loadSubscriptions()} aria-label="Refresh" className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"><RefreshCw size={15} className={loading ? 'animate-spin' : ''} /></button>
+                  <button onClick={() => void loadSubscriptions()} aria-label="Refresh" disabled={loading} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 disabled:opacity-50"><RefreshCw size={15} className={loading ? 'animate-spin' : ''} /></button>
                 </div>
               </div>
               <div className="overflow-x-auto">
@@ -200,8 +220,8 @@ export const SubscriptionWorkspace: React.FC<{ portalMode?: boolean }> = ({ port
               </div>
             </section>
 
-            <aside className="min-h-[420px] rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              {selected ? <>
+            <aside aria-live="polite" className="min-h-[420px] rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              {detailLoading ? <div role="status" className="flex min-h-[380px] items-center justify-center gap-2 text-sm text-slate-500"><LoaderCircle className="animate-spin" size={18} />Loading subscription details…</div> : selected ? <>
                 <div className="flex items-start justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{selected.number}</p><h2 className="mt-1 text-lg font-bold">{selected.customer}</h2><p className="text-sm text-slate-500">{selected.plan}</p></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${statusStyles[selected.status] || 'bg-slate-100'}`}>{selected.status}</span></div>
                 <div className="mt-5 grid grid-cols-2 gap-3"><Metric icon={<CalendarDays size={16} />} label="Start date" value={dateLabel(selected.start_date)} /><Metric icon={<CalendarDays size={16} />} label="Expiry" value={dateLabel(selected.expiry_date)} /><Metric icon={<Clock3 size={16} />} label="Next billing" value={dateLabel(selected.next_billing_date)} /><Metric icon={<FileText size={16} />} label="Quote valid to" value={dateLabel(selected.quote_valid_until)} /><Metric icon={<Users size={16} />} label="Billing cycle" value={selected.cadence.toLowerCase()} /><Metric icon={<CircleDollarSign size={16} />} label="Total" value={`${selected.currency} ${Number(selected.total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} /></div>
                 {!portalMode && selected.status === 'DRAFT' && <button onClick={() => { setEditing(selected); setShowCreate(true) }} className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit draft</button>}
